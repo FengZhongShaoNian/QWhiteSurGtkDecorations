@@ -149,16 +149,24 @@ void QAdwaitaDecorations::initConfiguration()
                         if (!buttonLayout.isEmpty()) {
                             updateTitlebarLayout(buttonLayout);
                         }
+
                         // Workaround for QGtkStyle not having correct titlebar font
                         // This is not going to be very precise as I want to avoid dependency on
                         // Pango which we had in QGnomePlatform, but at least make the font bold
                         // if detected.
-                        const QString titlebarFont =
+                        const bool titlebarUseDesktopFont =
                                 settings.value(QLatin1String("org.gnome.desktop.wm.preferences"))
-                                        .value(QLatin1String("titlebar-font"))
-                                        .toString();
-                        if (titlebarFont.contains(QLatin1String("bold"), Qt::CaseInsensitive)) {
-                            m_font->setBold(true);
+                                        .value(QLatin1String("titlebar-uses-desktop-font"))
+                                        .toBool();
+                        if (!titlebarUseDesktopFont) {
+                            const QString titlebarFont =
+                                    settings.value(QLatin1String(
+                                                           "org.gnome.desktop.wm.preferences"))
+                                            .value(QLatin1String("titlebar-font"))
+                                            .toString();
+                            if (titlebarFont.contains(QLatin1String("bold"), Qt::CaseInsensitive)) {
+                                m_font->setBold(true);
+                            }
                         }
                     }
                 }
@@ -180,16 +188,16 @@ void QAdwaitaDecorations::updateColors(bool useDarkColors)
             << "Changing color scheme to " << (useDarkColors ? "dark" : "light");
 
     m_preferDark = useDarkColors;
-    m_colors = { { Background, useDarkColors ? QColor(0x303030) : QColor(0xffffff) },
-                 { BackgroundInactive, useDarkColors ? QColor(0x242424) : QColor(0xfafafa) },
-                 { Foreground, useDarkColors ? QColor(0xffffff) : QColor(0x2e2e2e) },
-                 { ForegroundInactive, useDarkColors ? QColor(0x919191) : QColor(0x949494) },
-                 { Border, useDarkColors ? QColor(0x3b3b3b) : QColor(0xdbdbdb) },
-                 { BorderInactive, useDarkColors ? QColor(0x303030) : QColor(0xdbdbdb) },
-                 { ButtonBackground, useDarkColors ? QColor(0x444444) : QColor(0xebebeb) },
-                 { ButtonBackgroundInactive, useDarkColors ? QColor(0x2e2e2e) : QColor(0xf0f0f0) },
-                 { HoveredButtonBackground, useDarkColors ? QColor(0x4f4f4f) : QColor(0xe0e0e0) },
-                 { PressedButtonBackground, useDarkColors ? QColor(0x6e6e6e) : QColor(0xc2c2c2) } };
+    m_colors = { { Background, useDarkColors ? QColor(0x2e2e32) : QColor(0xffffff) },
+                 { BackgroundInactive, useDarkColors ? QColor(0x222226) : QColor(0xfafafb) },
+                 { Foreground, useDarkColors ? QColor(0xffffff) : QColor(0x333338) },
+                 { ForegroundInactive, useDarkColors ? QColor(0x919193) : QColor(0x969699) },
+                 { Border, useDarkColors ? QColor(0x2e2e32) : QColor(0xffffff) },
+                 { BorderInactive, useDarkColors ? QColor(0x2e2e32) : QColor(0xffffff) },
+                 { ButtonBackground, useDarkColors ? QColor(0x434347) : QColor(0xebebeb) },
+                 { ButtonBackgroundInactive, useDarkColors ? QColor(0x2d2d31) : QColor(0xf0f0f1) },
+                 { HoveredButtonBackground, useDarkColors ? QColor(0x4d4d51) : QColor(0xe0e0e1) },
+                 { PressedButtonBackground, useDarkColors ? QColor(0x6c6c6f) : QColor(0xc2c2c3) } };
     forceRepaint();
 }
 
@@ -268,8 +276,10 @@ void QAdwaitaDecorations::updateTitlebarLayout(const QString &layout)
             m_buttons.insert(Close, pos);
         } else if (button == QLatin1String("maximize")) {
             m_buttons.insert(Maximize, pos);
-        } else {
+        } else if (button == QLatin1String("minimize")) {
             m_buttons.insert(Minimize, pos);
+        } else {
+            continue;
         }
         pos++;
     }
@@ -368,6 +378,13 @@ QMargins QAdwaitaDecorations::margins() const
 }
 #endif
 
+static QColor makeTransparent(const QColor &color, qreal level)
+{
+    QColor transparentColor = color;
+    transparentColor.setAlphaF(level);
+    return transparentColor;
+}
+
 void QAdwaitaDecorations::paint(QPaintDevice *device)
 {
 #ifdef HAS_QT6_SUPPORT
@@ -384,7 +401,8 @@ void QAdwaitaDecorations::paint(QPaintDevice *device)
 
     const QRect surfaceRect = windowContentGeometry();
 
-    const QColor borderColor = active ? m_colors[Border] : m_colors[BorderInactive];
+    const QColor borderColor = active ? makeTransparent(m_colors[Border], 0.5)
+                                      : makeTransparent(m_colors[BorderInactive], 0.5);
     const QColor backgroundColor = active ? m_colors[Background] : m_colors[BackgroundInactive];
     const QColor foregroundColor = active ? m_colors[Foreground] : m_colors[ForegroundInactive];
 
@@ -460,27 +478,38 @@ void QAdwaitaDecorations::paint(QPaintDevice *device)
     {
         QPainterPath path;
 #ifdef HAS_QT6_SUPPORT
-        const QPoint topLeft = { margins(ShadowsOnly).left(), margins(ShadowsOnly).top() };
-        const int titleBarWidth =
-                surfaceRect.width() - margins(ShadowsOnly).left() - margins(ShadowsOnly).right();
+        const QPointF topLeft = { margins(ShadowsOnly).left() + 0.5,
+                                  margins(ShadowsOnly).top() - 0.5 };
+        const int frameWidth = surfaceRect.width() - margins(ShadowsOnly).left()
+                - margins(ShadowsOnly).right() - 0.5;
+        const int frameHeight = surfaceRect.height() - margins(ShadowsOnly).top()
+                - margins(ShadowsOnly).bottom() + 0.5;
 #else
-        const QPoint topLeft = { 0, 0 };
-        const int titleBarWidth = surfaceRect.width();
+        const QPointF topLeft = { 0.5, -0.5 };
+        const int frameWidth = surfaceRect.width() - 0.5;
+        const int frameHeight = surfaceRect.height() + 0.5;
 #endif
-        const int borderRectHeight = surfaceRect.height() - margins().top() - margins().bottom();
+        const QRectF fullFrameRect = QRectF(topLeft, QSizeF(frameWidth, frameHeight));
 
-        if (maximized || tiled)
-            path.addRect(margins().left(), margins().bottom(), titleBarWidth, margins().top());
-        else
-            path.addRoundedRect(
-                    QRectF(topLeft, QSizeF(titleBarWidth, margins().top() + ceCornerRadius)),
-                    ceCornerRadius, ceCornerRadius);
+        if (maximized || tiled) {
+            path.addRect(fullFrameRect);
+        } else {
+            const QSizeF radiusRectSize = QSizeF(ceCornerRadius * 2, ceCornerRadius * 2);
+            path.moveTo(fullFrameRect.bottomLeft());
+            path.lineTo(fullFrameRect.topLeft() + QPointF(0, ceCornerRadius));
+            path.arcTo(QRectF(fullFrameRect.topLeft(), radiusRectSize), 180, -90);
+            path.lineTo(fullFrameRect.topRight() - QPointF(ceCornerRadius, 0));
+            path.arcTo(QRectF(fullFrameRect.topRight() - QPointF(ceCornerRadius * 2, 0),
+                              radiusRectSize),
+                       90, -90);
+            path.lineTo(fullFrameRect.bottomRight());
+            path.closeSubpath();
+        }
 
         p.save();
         p.setPen(borderColor);
         p.fillPath(path.simplified(), backgroundColor);
         p.drawPath(path);
-        p.drawRect(topLeft.x(), margins().top(), titleBarWidth, borderRectHeight);
         p.restore();
     }
 
@@ -801,19 +830,31 @@ void QAdwaitaDecorations::processMouseTop(QWaylandInputDevice *inputDevice, cons
         if (local.x() <= margins().left()) {
             // top left bit
 #if QT_CONFIG(cursor)
+#  if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
+            waylandWindow()->applyCursor(inputDevice, Qt::SizeFDiagCursor);
+#  else
             waylandWindow()->setMouseCursor(inputDevice, Qt::SizeFDiagCursor);
+#  endif
 #endif
             startResize(inputDevice, Qt::TopEdge | Qt::LeftEdge, b);
         } else if (local.x() > surfaceRect.right() - margins().left()) {
             // top right bit
 #if QT_CONFIG(cursor)
+#  if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
+            waylandWindow()->applyCursor(inputDevice, Qt::SizeBDiagCursor);
+#  else
             waylandWindow()->setMouseCursor(inputDevice, Qt::SizeBDiagCursor);
+#  endif
 #endif
             startResize(inputDevice, Qt::TopEdge | Qt::RightEdge, b);
         } else {
             // top resize bit
 #if QT_CONFIG(cursor)
+#  if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
+            waylandWindow()->applyCursor(inputDevice, Qt::SizeVerCursor);
+#  else
             waylandWindow()->setMouseCursor(inputDevice, Qt::SizeVerCursor);
+#  endif
 #endif
             startResize(inputDevice, Qt::TopEdge, b);
         }
@@ -860,19 +901,31 @@ void QAdwaitaDecorations::processMouseBottom(QWaylandInputDevice *inputDevice, c
     if (local.x() <= margins().left()) {
         // bottom left bit
 #if QT_CONFIG(cursor)
+#  if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
+        waylandWindow()->applyCursor(inputDevice, Qt::SizeBDiagCursor);
+#  else
         waylandWindow()->setMouseCursor(inputDevice, Qt::SizeBDiagCursor);
+#  endif
 #endif
         startResize(inputDevice, Qt::BottomEdge | Qt::LeftEdge, b);
     } else if (local.x() > window()->width() + margins().right()) {
         // bottom right bit
 #if QT_CONFIG(cursor)
+#  if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
+        waylandWindow()->applyCursor(inputDevice, Qt::SizeFDiagCursor);
+#  else
         waylandWindow()->setMouseCursor(inputDevice, Qt::SizeFDiagCursor);
+#  endif
 #endif
         startResize(inputDevice, Qt::BottomEdge | Qt::RightEdge, b);
     } else {
         // bottom bit
 #if QT_CONFIG(cursor)
+#  if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
+        waylandWindow()->applyCursor(inputDevice, Qt::SizeVerCursor);
+#  else
         waylandWindow()->setMouseCursor(inputDevice, Qt::SizeVerCursor);
+#  endif
 #endif
         startResize(inputDevice, Qt::BottomEdge, b);
     }
@@ -884,7 +937,11 @@ void QAdwaitaDecorations::processMouseLeft(QWaylandInputDevice *inputDevice, con
     Q_UNUSED(local)
     Q_UNUSED(mods)
 #if QT_CONFIG(cursor)
+#  if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
+    waylandWindow()->applyCursor(inputDevice, Qt::SizeHorCursor);
+#  else
     waylandWindow()->setMouseCursor(inputDevice, Qt::SizeHorCursor);
+#  endif
 #endif
     startResize(inputDevice, Qt::LeftEdge, b);
 }
@@ -895,7 +952,11 @@ void QAdwaitaDecorations::processMouseRight(QWaylandInputDevice *inputDevice, co
     Q_UNUSED(local)
     Q_UNUSED(mods)
 #if QT_CONFIG(cursor)
+#  if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
+    waylandWindow()->applyCursor(inputDevice, Qt::SizeHorCursor);
+#  else
     waylandWindow()->setMouseCursor(inputDevice, Qt::SizeHorCursor);
+#  endif
 #endif
     startResize(inputDevice, Qt::RightEdge, b);
 }
