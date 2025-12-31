@@ -62,8 +62,7 @@ Installation: system
      Subject: Bump to 2.7.11 release (b2ac9f9e1947)
         Date: 2025-11-24 15:02:30 +0000
 ```
-As shown above, the flatpak runtime for this application is `org.kde.Platform/x86_64/5.15-25.08`, so it needs to be installed.
-QWhiteSurGtkDecorations-5.15-25.08.flatpak:
+As shown above, the flatpak runtime for this application is `org.kde.Platform/x86_64/5.15-25.08`, so `QWhiteSurGtkDecorations-5.15-25.08.flatpak` needs to be installed.:
 
 ```shell
 sudo flatpak install QWhiteSurGtkDecorations-5.15-25.08.flatpak
